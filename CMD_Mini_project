@@ -1,0 +1,288 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Mar 15 16:18:18 2023
+
+@author: chimnay
+"""
+################################################
+#################input module###################
+################################################
+
+'''
+with open('nodes_cordinates.txt', 'w') as file:
+    a=1
+with open('elements_nodes.txt', 'w') as file:
+    B=1
+'''
+with open('nodes_cordinates.txt', 'r') as file:
+
+    # Initialize an empty dictionary
+    nodes_cordinates = {}
+
+    # Read each line in the file
+    for line in file:
+        
+        # Split the line into key and value using ':' separator
+        key, value = line.strip().split(':')
+        
+        # Add the key-value pair to the dictionary
+        nodes_cordinates[key] = value.strip().split(',')
+
+# Print the noes and coords
+print('The nodes and coords:')
+print(nodes_cordinates)
+
+
+with open('elements_nodes.txt', 'r') as file:
+
+    # Initialize an empty dictionary
+    elements_nodes = {}
+
+    # Read each line in the file
+    for line in file:
+        
+        # Split the line into key and value using ':' separator
+        key, value = line.strip().split(':')
+        
+        # Add the key-value pair to the dictionary
+        elements_nodes[key]= value.strip().split(',')
+
+# Print the elements and nodal connections
+print('Elements and nodal connections:')
+print(elements_nodes)
+
+
+#hard code boundry conditions here
+nodes_grounded={'7','8','9','10'}
+force_given={'1':[0,60000,0],'2':[0,60000,0]}
+#
+#
+#
+#
+#
+######################################################
+
+######################################################
+###############  individual K for all ele  ###########
+######################################################
+import numpy as np
+T_3x3={}
+T_6x6={}
+KG_6x6={}
+for ele in elements_nodes.keys():
+    #print(elements_nodes[ele][0])
+    k=elements_nodes[ele][0]
+    local_origin=[]
+    local_origin.append(float(nodes_cordinates[k][0]))
+    local_origin.append(float(nodes_cordinates[k][1]))
+    local_origin.append(float(nodes_cordinates[k][2]))
+    #print(local_origin)
+    k=elements_nodes[ele][1]
+    local_point=[]
+    local_point.append(float(nodes_cordinates[k][0]))
+    local_point.append(float(nodes_cordinates[k][1]))
+    local_point.append(float(nodes_cordinates[k][2]))
+    #print(local_point)
+    
+    # Define the two points that define the local coordinate system
+    local_origin = np.array(local_origin)  # local origin in global coordinates
+    local_point = np.array(local_point)   # a point on the local x-axis in global coordinates
+    
+    # Define the vector that defines the local x-axis
+    local_x = local_point - local_origin
+    
+    # Normalize the local x-axis vector
+    local_x_norm = local_x / np.linalg.norm(local_x)
+    
+    # Calculate the local y-axis vector as the cross product of the local x-axis vector and the global z-axis vector
+    global_z = np.array([0, 0, 1])
+    local_y = np.cross(local_x_norm, global_z)
+    
+    # Calculate the local z-axis vector as the cross product of the local x-axis vector and the local y-axis vector
+    local_z = np.cross(local_x_norm, local_y)
+    
+    # Create the transformation matrix from the local coordinate system to the global coordinate system
+    transformation_matrix = np.column_stack((local_x_norm, local_y, local_z))
+    T_3x3[ele]=transformation_matrix
+    matrix = np.zeros((6,6))
+    matrix[0:3, 0:3] = transformation_matrix
+    matrix[3:6, 3:6] = transformation_matrix
+    T_6x6[ele]=matrix
+    matrix = np.zeros((6,6))
+    matrix[0,0] = 1
+    matrix[0,3] = -1
+    matrix[3,0] = -1
+    matrix[3,3] = 1
+    AE_L=3*10000000*3.14/np.linalg.norm(local_x)
+    KG_6x6[ele]=(T_6x6[ele] @ matrix @ T_6x6[ele].T)*AE_L
+    
+###################################################
+
+
+
+###################################################
+#############  building global K matrix ###########
+###################################################
+KG_30x30=np.zeros(30*30).reshape(30,30)
+for ele in elements_nodes.keys():
+    n1=int(elements_nodes[ele][0])
+    n2=int(elements_nodes[ele][1])
+    #print(elements_nodes[ele][0])
+    #print(elements_nodes[ele][1])
+    K_individual=np.array(KG_6x6[ele])
+    #print(K_individual)
+    #node 1
+    KG_30x30[3*(n1-1):3*(n1-1)+3,3*(n1-1):3*(n1-1)+3]=KG_30x30[3*(n1-1):3*(n1-1)+3,3*(n1-1):3*(n1-1)+3]+K_individual[0:3,0:3]
+    KG_30x30[3*(n2-1):3*(n2-1)+3,3*(n1-1):3*(n1-1)+3]=KG_30x30[3*(n2-1):3*(n2-1)+3,3*(n1-1):3*(n1-1)+3]+K_individual[3:6,0:3]
+    KG_30x30[3*(n1-1):3*(n1-1)+3,3*(n2-1):3*(n2-1)+3]=KG_30x30[3*(n1-1):3*(n1-1)+3,3*(n2-1):3*(n2-1)+3]+K_individual[0:3,3:6]
+    KG_30x30[3*(n2-1):3*(n2-1)+3,3*(n2-1):3*(n2-1)+3]=KG_30x30[3*(n2-1):3*(n2-1)+3,3*(n2-1):3*(n2-1)+3]+K_individual[3:6,3:6]
+#print(KG_6x6['1'])
+#print(KG_30x30)
+###################################################
+
+
+
+###################################################
+############# to calculate nodal displacement #####
+###################################################
+UG=np.zeros(30)
+UG_6=np.zeros(18)
+FG=np.zeros(18)
+for ele in force_given.keys():
+    FG[3*(int(ele)-1):3*(int(ele)-1)+3]=force_given[ele]
+    print(FG)
+UG_6=np.linalg.solve(KG_30x30[0:18,0:18],FG)
+print(UG_6)
+
+
+###############################################
+############# ploting the out comes############
+###############################################
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# Define the nodes and elements
+array_nodes=[]
+for ele in nodes_cordinates.keys():
+    vector=[float(nodes_cordinates[ele][0]),float(nodes_cordinates[ele][1]),float(nodes_cordinates[ele][2])]
+    array_nodes.append(vector)
+nodes = np.array(array_nodes)
+print(nodes)
+
+array_elements=[]
+for ele in elements_nodes.keys():
+    vector=[int(elements_nodes[ele][0]),int(elements_nodes[ele][1])]
+    array_elements.append(vector)
+elements = np.array(array_elements)
+# Create a 3D figure
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot the nodes
+ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], c='b', marker='o')
+
+# Plot the elements
+for element in elements:
+    x = nodes[element-1,0]
+    y = nodes[element-1,1]
+    z = nodes[element-1,2]
+    ax.plot(x, y, z, '-',c=(0,0,0))
+
+# Set the axis labels
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+
+# Show the plot
+
+#########################################
+############# Ploting deformed body#####
+#########################################
+#######
+##############for original scale#########
+##########################################
+######
+######
+scaling_factor=1
+######
+######
+##########################################
+array_nodes=[]
+for ele in nodes_cordinates.keys():
+    if int(ele)<7:
+        vector=[0,0,0]
+        vector[0]=float(nodes_cordinates[ele][0])+scaling_factor*UG_6[3*(int(ele)-1)]
+        vector[1]=float(nodes_cordinates[ele][1])+scaling_factor*UG_6[3*(int(ele)-1)+1]
+        vector[2]=float(nodes_cordinates[ele][2])+scaling_factor*UG_6[3*(int(ele)-1)+2]
+        print(ele)
+        array_nodes.append(vector)
+    else:
+        vector=[float(nodes_cordinates[ele][0]),float(nodes_cordinates[ele][1]),float(nodes_cordinates[ele][2])]
+        array_nodes.append(vector)
+        
+nodes = np.array(array_nodes)
+print(nodes)
+##################################################
+############## calculating elemental stresses#####
+##################################################
+elements_stress={}
+for ele in elements_nodes:
+    cx1=float(nodes_cordinates[elements_nodes[ele][0]][0])
+    cy1=float(nodes_cordinates[elements_nodes[ele][0]][1])
+    cz1=float(nodes_cordinates[elements_nodes[ele][0]][2])
+    cx2=float(nodes_cordinates[elements_nodes[ele][1]][0])
+    cy2=float(nodes_cordinates[elements_nodes[ele][1]][1])
+    cz2=float(nodes_cordinates[elements_nodes[ele][1]][2])
+    cnx1=nodes[int(elements_nodes[ele][0])-1,0]
+    cny1=nodes[int(elements_nodes[ele][0])-1,1]
+    cnz1=nodes[int(elements_nodes[ele][0])-1,2]
+    cnx2=nodes[int(elements_nodes[ele][1])-1,0]
+    cny2=nodes[int(elements_nodes[ele][1])-1,1]
+    cnz2=nodes[int(elements_nodes[ele][1])-1,2]
+    l_initial=np.sqrt((cx1-cx2)**2+(cy1-cy2)**2+(cz1-cz2)**2)
+    l_final=np.sqrt((cnx1-cnx2)**2+(cny1-cny2)**2+(cnz1-cnz2)**2)
+    elements_stress[ele]=(l_final-l_initial)*3*10000000/l_initial
+    #print(elements_stress[ele])
+    
+print(elements_stress)
+
+###################################################
+
+array_elements=[]
+for ele in elements_nodes.keys():
+    vector=[int(elements_nodes[ele][0]),int(elements_nodes[ele][1])]
+    array_elements.append(vector)
+elements = np.array(array_elements)
+# Create a 3D figure
+
+
+# Plot the nodes
+ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], c='y', marker='o')
+
+# Plot the elements
+i=0
+for element in elements:
+    x = nodes[element-1,0]
+    y = nodes[element-1,1]
+    z = nodes[element-1,2]
+    
+    i=i+1
+    r=0
+    g=0
+    b=0
+    if elements_stress[str(i)]>0:
+        r=elements_stress[str(i)]/max(elements_stress.values())
+    else:
+        b=elements_stress[str(i)]/min(elements_stress.values())
+    
+    ax.plot(x, y, z, '-',c=(r,g,b))
+
+# Set the axis labels
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+
+# Show the plot
+plt.savefig('plot_scaled.png')
+plt.show()
+
